@@ -15,6 +15,10 @@ def self_centered(expr: Expr):
     })
 
 
+def aspect_constraint(aspect_ration: float = 1):
+    return Eq(WIDGET_WIDTH, WIDGET_HEIGHT * aspect_ration)
+
+
 def width_percent(factor: float):
     return Eq(WIDGET_WIDTH, RELATIVE_WIDTH * factor)
 
@@ -47,19 +51,27 @@ def top_inside(pixels: float = 10):
     return Eq(WIDGET_Y + WIDGET_HEIGHT, RELATIVE_Y + RELATIVE_HEIGHT - pixels)
 
 
-def over(widget: "Widget", pixels: float = 10):
+def over(widget: Widget, pixels: float = 10):
     return Eq(WIDGET_Y, widget.top_edge + pixels)
 
 
-def under(widget: "Widget", pixels: float = 10):
+def under(widget: Widget, pixels: float = 10):
     return Eq(WIDGET_TOP_EDGE, widget.y_expr - pixels)
+
+
+def right_to(widget: Widget, pixels: float = 10):
+    return Eq(WIDGET_X, widget.right_edge_expr + pixels)
+
+
+def left_to(widget: Widget, pixels: float = 10):
+    return Eq(WIDGET_RIGHT_EDGE, widget.x - pixels)
 
 
 parent_x_centered = self_centered(Eq(WIDGET_X, RELATIVE_WIDTH / 2))
 parent_y_centered = self_centered(Eq(WIDGET_Y, RELATIVE_HEIGHT / 2))
 
 
-def to(widget: "Widget", constraint: Expr):
+def to(widget: Widget, constraint: Expr):
     # replaces RELATIVE_* symbols
     return constraint.subs({
         RELATIVE_X: widget.x_expr,

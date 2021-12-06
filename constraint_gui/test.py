@@ -10,10 +10,6 @@ class MouseTest(Label):
         self.bg = (self.bg[0] + 1 % 256,) * 3
 
 
-class MouseTestWindow(Window, MouseTest):
-    ...
-
-
 def aligntest():
     win = Window(bg=color("gainsboro"))
 

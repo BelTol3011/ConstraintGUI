@@ -15,79 +15,18 @@ WIDGET_HEIGHT = Symbol("Wh")
 WIDGET_X = Symbol("Wx")
 WIDGET_Y = Symbol("Wy")
 
-WIDGET_TOP_EDGE = WIDGET_Y + WIDGET_HEIGHT
-WIDGET_RIGHT_EDGE = WIDGET_X + WIDGET_WIDTH
-
-RELATIVE_X = Symbol("RELATIVE_X")
-RELATIVE_Y = Symbol("RELATIVE_Y")
-RELATIVE_WIDTH = Symbol("RELATIVE_WIDTH")
-RELATIVE_HEIGHT = Symbol("RELATIVE_HEIGHT")
+RELATIVE_X = Symbol("Px")
+RELATIVE_Y = Symbol("Py")
+RELATIVE_WIDTH = Symbol("Pw")
+RELATIVE_HEIGHT = Symbol("Ph")
 
 
 def color(name: str):
     return colors[name]
 
 
-# TODO: specify parent_widget in args of constraints
 def aspect_constraint(aspect_ration: float = 1):
     return Eq(WIDGET_WIDTH, WIDGET_HEIGHT * aspect_ration)
-
-
-def self_centered(expr: Expr):
-    return expr.subs({
-        WIDGET_X: WIDGET_X + WIDGET_WIDTH / 2,
-        WIDGET_Y: WIDGET_Y + WIDGET_HEIGHT / 2
-    })
-
-
-def width_percent(factor: float):
-    return Eq(WIDGET_WIDTH, RELATIVE_WIDTH * factor)
-
-
-def height_percent(factor: float):
-    return Eq(WIDGET_HEIGHT, RELATIVE_HEIGHT * factor)
-
-
-def x_percent(factor: float):
-    return Eq(WIDGET_X, RELATIVE_WIDTH * factor)
-
-
-def y_percent(factor: float):
-    return Eq(WIDGET_Y, RELATIVE_HEIGHT * factor)
-
-
-def left_inside(pixels: float = 10):
-    return Eq(WIDGET_X, RELATIVE_X + pixels)
-
-
-def bottom_inside(pixels: float = 10):
-    return Eq(WIDGET_Y, RELATIVE_Y + pixels)
-
-
-def right_inside(pixels: float = 10):
-    return Eq(WIDGET_X + WIDGET_WIDTH, RELATIVE_X + RELATIVE_WIDTH - pixels)
-
-
-def top_inside(pixels: float = 10):
-    return Eq(WIDGET_Y + WIDGET_HEIGHT, RELATIVE_Y + RELATIVE_HEIGHT - pixels)
-
-
-def under(widget: "Widget", pixels: float = 10):
-    return Eq(WIDGET_TOP_EDGE, widget.y_expr - pixels)
-
-
-parent_x_centered = self_centered(Eq(WIDGET_X, RELATIVE_WIDTH / 2))
-parent_y_centered = self_centered(Eq(WIDGET_Y, RELATIVE_HEIGHT / 2))
-
-
-def to(widget: "Widget", constraint: Expr):
-    # replaces RELATIVE_* symbols
-    return constraint.subs({
-        RELATIVE_X: widget.x_expr,
-        RELATIVE_Y: widget.y_expr,
-        RELATIVE_WIDTH: widget.width_expr,
-        RELATIVE_HEIGHT: widget.height_expr
-    })
 
 
 class ConstraintResolutionException(Exception): ...
@@ -112,6 +51,7 @@ class Widget:
         self.last_mouse_y = 0
 
         self.is_destroyed = False
+        self.is_mouse_inside = False
 
         self.master = master
         if self.master:
@@ -194,14 +134,21 @@ class Widget:
     def get_expr(self, expr):
         """Converts a relative expression, e. g. Eq(WIDGET_WIDTH, WIDGET_HEIGHT) to an absolute expression, e. g.
         Eq(Symbol(Ww_<widget_id>), Symbol(Wh_<widget_id>))"""
-        # TODO: add relative constraint function since x and y are absolute now
-        return expr.subs({
+        expr = expr.subs({
             WIDGET_X: self.x_expr,
             WIDGET_Y: self.y_expr,
             WIDGET_WIDTH: self.width_expr,
             WIDGET_HEIGHT: self.height_expr
-            # TODO: add parent widget??
         })
+
+        if self.master is not None:
+            expr = expr.subs({
+                RELATIVE_X: self.master.x_expr,
+                RELATIVE_Y: self.master.y_expr,
+                RELATIVE_WIDTH: self.master.width_expr,
+                RELATIVE_HEIGHT: self.master.height_expr
+            })
+        return expr
 
     @property
     def expr_params(self):
@@ -246,22 +193,19 @@ class Widget:
     def draw_self(self, batch: pyglet.graphics.Batch):
         ...
 
-    def _on_mouse_motion(self, x, y, dx, dy):
-        in_child = False
-
+    def get_affected_widget(self, x, y):
+        # only invoke event on most top widgets, we don't want covered widgets to also fire
         for child in self.children:
             # check if cursor is in child
             if child.x < x < child.right_edge and child.y < y < child.top_edge:
-                child._on_mouse_motion(x - child.x, y - child.y, dx, dy)
-                in_child = True
+                return child.get_affected_widget(x, y)
 
-        # only invoke event on most top widgets, we don't want covered widgets to also fire
-        if not in_child:
-            self.last_mouse_x = x
-            self.last_mouse_y = y
-            self.on_mouse_motion(x, y, dx, dy)
+        return self
 
     def on_mouse_motion(self, x, y, dx, dy):
+        ...
+
+    def on_mouse_press(self, x, y, button, modifiers):
         ...
 
     def destroy(self):
@@ -281,8 +225,8 @@ class Label(Widget):
                  bg=(255, 255, 255),
                  fg=(22, 22, 22, 255),
                  text="",
-                 font_name="consolas",
-                 font_size=40,
+                 font_name="Inconsolata",
+                 font_size=30,
                  bold=False,
                  italic=False,
                  underline=False,
@@ -290,7 +234,7 @@ class Label(Widget):
                  dpi=None):
         """
 
-        :arg align In the format (North|Center|South)(West|Center|East)
+        :arg align in the format (North|Center|South)(West|Center|East)
         """
         super().__init__(window, master)
 
@@ -325,14 +269,14 @@ class Label(Widget):
                                     color=self.fg,
                                     multiline=True,
                                     dpi=self.dpi,
-                                    anchor_y={"N": "top", "C": "center", "S": "baseline"}[self.align[0]],
+                                    anchor_y={"N": "top", "C": "center", "S": "bottom"}[self.align[0]],
                                     align={"W": "left", "C": "center", "E": "right"}[self.align[1]],
                                     batch=batch, group=OrderedGroup(1, self.group))
 
 
 class Window(Widget):
     def __init__(self, bg=(255, 255, 255)):
-        self.window = pyglet.window.Window(resizable=True)
+        self.window = pyglet.window.Window(800, 450, resizable=True)
 
         self.widgets: set[Widget] = set()
 
@@ -350,7 +294,11 @@ class Window(Widget):
         self.bg = bg
 
         self.window.event("on_draw")(self.loopiter)
-        self.window.event("on_mouse_motion")(self._on_mouse_motion)
+        self.window.event("on_mouse_motion")(self.on_mouse_motion)
+        # BaseWindow.register_event_type('on_mouse_drag')
+        self.window.event("on_mouse_press")(self.on_mouse_press)
+        # BaseWindow.register_event_type('on_mouse_release')
+        # BaseWindow.register_event_type('on_mouse_scroll')
 
     @property
     def z(self):
@@ -363,7 +311,7 @@ class Window(Widget):
     @bg.setter
     def bg(self, color_: tuple[int, int, int]):
         self.window.switch_to()
-        glClearColor(*tuple(val // 255 for val in color_), 255)
+        glClearColor(*tuple(val / 255 for val in color_), 255)
         self._bg = color_
 
     def loopiter(self):
@@ -406,3 +354,17 @@ class Window(Widget):
 
     def register_widget(self, widget: Widget):
         self.widgets.add(widget)
+
+    def on_mouse_motion(self, x, y, dx, dy):
+        widget = self.get_affected_widget(x, y)
+
+        # this could be optimized... oh well
+        for widget in self.widgets:
+            widget.is_mouse_inside = False
+
+        widget.is_mouse_inside = True
+        widget.on_mouse_motion(x, y, dx, dy)
+
+    def on_mouse_press(self, x, y, button, modifiers):
+        widget = self.get_affected_widget(x, y)
+        widget.on_mouse_motion(x, y, button, modifiers)

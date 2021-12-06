@@ -1,4 +1,5 @@
-from __init__ import *
+from constraint_gui import *
+from constraint_gui.constraints import *
 
 
 class MouseTest(Label):
@@ -6,12 +7,11 @@ class MouseTest(Label):
         super().__init__(*args, **kwargs)
 
     def on_mouse_motion(self, x, y, dx, dy):
-        self.bg = (self.bg[0] + 1 % 256, ) * 3
+        self.bg = (self.bg[0] + 1 % 256,) * 3
 
 
 class MouseTestWindow(Window, MouseTest):
     ...
-
 
 
 def aligntest():
@@ -20,7 +20,7 @@ def aligntest():
     for i, y_align in enumerate("NCS"):
         for j, x_align in enumerate("WCE"):
             align = y_align + x_align
-            label = Label(win, bg=(128 + (128 // 3 * i), 128 + (128 // 3 * j), 255), text=align, align=align)
+            label = Label(win, win, bg=(128 + (128 // 3 * i), 128 + (128 // 3 * j), 255), text=align, align=align)
             label.constraints = [
                 width_percent(1 / 3),
                 height_percent(1 / 3),

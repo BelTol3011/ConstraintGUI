@@ -9,6 +9,10 @@ def random_color():
     return random.choice(color_values)
 
 
+def get_color_from_2d(x, y, max_x=3, max_y=3):
+    return 128 + (128 // max_x * x), 128 + (128 // max_y * y), 255
+
+
 colors = {
     "ghost white": [248, 248, 255],
     "GhostWhite": [248, 248, 255],

@@ -351,6 +351,9 @@ class Window(Widget):
     def _on_mouse_motion(self, x, y, dx, dy):
         # this could be optimized... oh well
         for widget_ in self.widgets:
+            if widget_.is_mouse_inside:
+                widget_.register_redraw()
+
             widget_.is_mouse_inside = False
 
         widget = self.get_affected_widget(x, y)

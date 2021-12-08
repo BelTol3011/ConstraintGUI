@@ -37,7 +37,7 @@ def main():
         height_percent(.10)
     ]
 
-    checkbox1 = CheckBox(win, left_pane, text="CheckBox1")
+    checkbox1 = CheckBox(win, left_pane, text="Test 1")
     checkbox1.constraints = [
         under(button3, 10),
         left_inside(10),
@@ -45,7 +45,7 @@ def main():
         height_percent(.05)
     ]
 
-    checkbox2 = CheckBox(win, left_pane, text="CheckBox2")
+    checkbox2 = CheckBox(win, left_pane, text="Test 2")
     checkbox2.constraints = [
         under(checkbox1, 10),
         left_inside(10),
@@ -53,7 +53,7 @@ def main():
         height_percent(.05)
     ]
 
-    checkbox3 = CheckBox(win, left_pane, text="CheckBox3")
+    checkbox3 = CheckBox(win, left_pane, text="Test 3")
     checkbox3.constraints = [
         under(checkbox2, 10),
         left_inside(10),
@@ -61,7 +61,7 @@ def main():
         height_percent(.05)
     ]
 
-    checkbox4 = CheckBox(win, left_pane, text="CheckBox4")
+    checkbox4 = CheckBox(win, left_pane, text="Test 4")
     checkbox4.constraints = [
         under(checkbox3, 10),
         left_inside(10),

@@ -1,6 +1,9 @@
 import itertools
+import time
 
-from .colors import colors
+from pyglet.window.mouse import LEFT
+
+from .colors import color, random_color
 from typing import Iterable, Callable, Optional
 
 import pyglet
@@ -20,10 +23,6 @@ RELATIVE_WIDTH = Symbol("Pw")
 RELATIVE_HEIGHT = Symbol("Ph")
 
 
-def color(name: str):
-    return colors[name]
-
-
 class ConstraintResolutionException(Exception): ...
 
 
@@ -31,11 +30,11 @@ class RenderException(Exception): ...
 
 
 class Widget:
-    def __init__(self, window: Optional["Window"], master: Optional["Widget"] = None):
-        self.x = 0.
-        self.y = 0.
-        self.width = 0.
-        self.height = 0.
+    def __init__(self, window: "Window", master: Optional["Widget"] = None):
+        self.x = 0
+        self.y = 0
+        self.width = 0
+        self.height = 0
 
         self._x: Callable[[int, int], int] | None = None
         self._y: Callable[[int, int], int] | None = None
@@ -57,11 +56,22 @@ class Widget:
             self.window_.register_widget(self)
 
         self.constraints = []
-        self._solutions = []
+        self._solutions = {}
         self.children: set[Widget] = set()
+
+        self.needs_update = True
+        self.needs_redraw = True
 
     def register_child(self, widget: "Widget"):
         self.children.add(widget)
+
+    def register_constraint_reeval(self):
+        self.needs_update = True
+
+    def register_redraw(self):
+        self.needs_redraw = True
+
+        [child.register_redraw() for child in self.children]
 
     @property
     def z(self):
@@ -121,6 +131,8 @@ class Widget:
         self.y = float(self._y(*self.window_.params))
         self.width = float(self._width(*self.window_.params))
         self.height = float(self._height(*self.window_.params))
+
+        self.needs_update = False
 
     def get_expr(self, expr):
         """Converts a relative expression, e. g. Eq(WIDGET_WIDTH, WIDGET_HEIGHT) to an absolute expression, e. g.
@@ -192,6 +204,9 @@ class Widget:
     def draw_self(self, batch: pyglet.graphics.Batch):
         ...
 
+    def draw(self, batch: pyglet.graphics.Batch):
+        self.draw_self(batch)
+
     def get_affected_widget(self, x, y):
         # only invoke event on most top widgets, we don't want covered widgets to also fire
         for child in self.children:
@@ -239,11 +254,12 @@ class Window(Widget):
         self.bg = bg
 
         self.window.event("on_draw")(self.loopiter)
-        self.window.event("on_mouse_motion")(self.on_mouse_motion)
+        self.window.event("on_mouse_motion")(self._on_mouse_motion)
         # BaseWindow.register_event_type('on_mouse_drag')
-        self.window.event("on_mouse_press")(self.on_mouse_press)
+        self.window.event("on_mouse_press")(self._on_mouse_press)
         # BaseWindow.register_event_type('on_mouse_release')
         # BaseWindow.register_event_type('on_mouse_scroll')
+        self.window.event("on_resize")(self.on_resize)
 
     @property
     def z(self):
@@ -259,27 +275,51 @@ class Window(Widget):
         glClearColor(*tuple(val / 255 for val in color_), 255)
         self._bg = color_
 
+    def on_resize(self, width, height):
+        self.width = width
+        self.height = height
+
+        # need to reevaluate the constraints
+        self.register_constraint_reeval()
+
+        # need to redraw all the widgets
+        self.register_redraw()
+
     def loopiter(self):
-        self.width = self.window.width
-        self.height = self.window.height
+        t = time.perf_counter()
 
         self.window.switch_to()
-        self.window.clear()
-        self.draw()
 
-    def draw(self):
+        self.width = self.window.width
+        self.height = self.window.height
+        self.draw_()
+
+        self.window.set_caption(f"{time.perf_counter() - t:.5f} s")
+
+    def draw_(self):
         if self.resolve_constraints_on_next_frame:
             self.solve_constraints()
 
             self.resolve_constraints_on_next_frame = False
 
+        if self.needs_redraw:
+            self.window.clear()
+
         batch = pyglet.graphics.Batch()
 
         for widget in self.widgets:
-            widget.update_self()
-            widget.draw_self(batch)
+            if widget.needs_update or self.needs_update:
+                widget.needs_update = False
+                widget.update_self()
+
+            if widget.needs_redraw or self.needs_redraw:
+                widget.needs_redraw = False
+                widget.draw(batch)
 
         batch.draw()
+
+        self.needs_update = False
+        self.needs_redraw = False
 
     def solve_constraints(self):
         all_constraints = []
@@ -295,8 +335,11 @@ class Window(Widget):
         )[0]
 
         for widget in self.widgets:
+            print(f"*** {widget!r} ***")
             try:
                 widget.solutions = {expr: solutions[expr] for expr in widget.expr_params}
+                for var, expr in widget.solutions.items():
+                    print(f" {var} = {expr}")
             except KeyError as e:
                 raise ConstraintResolutionException(
                     f"Solutions invalid/insufficient. Couldn't resolve the above variable for widget {widget!r}. "
@@ -305,21 +348,20 @@ class Window(Widget):
     def register_widget(self, widget: Widget):
         self.widgets.add(widget)
 
-    def on_mouse_motion(self, x, y, dx, dy):
+    def _on_mouse_motion(self, x, y, dx, dy):
         # this could be optimized... oh well
         for widget_ in self.widgets:
             widget_.is_mouse_inside = False
 
         widget = self.get_affected_widget(x, y)
 
-        if widget == self:
-            return
-
+        widget.register_redraw()
         widget.is_mouse_inside = True
         widget.on_mouse_motion(x, y, dx, dy)
 
-    def on_mouse_press(self, x, y, button, modifiers):
+    def _on_mouse_press(self, x, y, button, modifiers):
         widget = self.get_affected_widget(x, y)
+        widget.register_redraw()
         widget.on_mouse_press(x, y, button, modifiers)
 
 
@@ -357,31 +399,30 @@ class Label(Widget):
         self.align = align
         self.dpi = dpi
 
+    @property
+    def background(self):
+        return self.bg_on_hover if self.is_mouse_inside and self.bg_on_hover is not None else self.bg
+
     def draw_self(self, batch: pyglet.graphics.Batch):
-        bg = self.bg_on_hover if self.is_mouse_inside and self.bg_on_hover is not None else self.bg
+        self.bg_rect = pyglet.shapes.Rectangle(self.x, self.y, self.width, self.height, color=self.background,
+                                               batch=batch, group=OrderedGroup(self.z))
 
-        self._ = pyglet.shapes.Rectangle(self.x, self.y, self.width, self.height, color=bg,
-                                         batch=batch, group=OrderedGroup(0, self.group))
-
-        if self.width <= 0:
-            self.width = 1
-
-        self.__ = pyglet.text.Label(text=self.text,
-                                    x=self.x,
-                                    y={"N": self.top_edge, "C": self.y_center, "S": self.y}[self.align[0]],
-                                    width=self.width,
-                                    font_name=self.font_name,
-                                    font_size=self.font_size,
-                                    color=self.fg,
-                                    multiline=True,
-                                    dpi=self.dpi,
-                                    anchor_y={"N": "top", "C": "center", "S": "bottom"}[self.align[0]],
-                                    align={"W": "left", "C": "center", "E": "right"}[self.align[1]],
-                                    batch=batch, group=OrderedGroup(1, self.group))
+        self.text_label = pyglet.text.Label(text=self.text,
+                                            x=self.x,
+                                            y={"N": self.top_edge, "C": self.y_center, "S": self.y}[self.align[0]],
+                                            width=self.width,
+                                            font_name=self.font_name,
+                                            font_size=self.font_size,
+                                            color=self.fg,
+                                            multiline=True,
+                                            dpi=self.dpi,
+                                            anchor_y={"N": "top", "C": "center", "S": "bottom"}[self.align[0]],
+                                            align={"W": "left", "C": "center", "E": "right"}[self.align[1]],
+                                            batch=batch, group=OrderedGroup(self.z + 1))
 
 
 class CheckBox(Widget):
-    def __init__(self, window: Optional["Window"], master: Optional["Widget"] = None,
+    def __init__(self, window: "Window", master: Optional["Widget"] = None,
                  on_color=color("green"), off_color=color("dark red"),
                  font_size=20, align="CW", *label_args, **label_kwargs):
         Widget.__init__(self, window, master)
@@ -422,6 +463,8 @@ class CheckBox(Widget):
             self.checkbox_label.bg = self.off_color
 
     def on_mouse_press(self, x, y, button, modifiers):
+        if button != LEFT:
+            return
         self.status = not self.status
 
 

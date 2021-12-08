@@ -1,3 +1,14 @@
+import random
+
+
+def color(name: str):
+    return colors[name]
+
+
+def random_color():
+    return random.choice(color_values)
+
+
 colors = {
     "ghost white": [248, 248, 255],
     "GhostWhite": [248, 248, 255],
@@ -549,3 +560,5 @@ colors = {
     "light green": [144, 238, 144],
     "LightGreen": [144, 238, 144]
 }
+
+color_values = list(colors.values())

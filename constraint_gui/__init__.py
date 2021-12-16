@@ -324,15 +324,29 @@ class Window(Widget):
     def solve_constraints(self):
         all_constraints = []
 
+        if not self.widgets:
+            # nothing to solve
+            return
+
         # add constraints of all widgets
         for widget in self.widgets:
             all_constraints += widget.constraints
 
-        solutions: dict[Symbol: Expr] = solve(
+        _solutions: list[dict[Symbol, Expr]] = solve(
             all_constraints,
             itertools.chain(*[widget.expr_params for widget in self.widgets]),
             dict=True
-        )[0]
+        )
+
+        try:
+            solutions = _solutions[0]
+        except IndexError as e:
+            raise ConstraintResolutionException(
+                "Got no solutions from sympy.solve :(. This is caused by conflicting constraints that can't be "
+                "fulfilled at the same time. For example: [..., top_inside(10), top_inside(20)] or "
+                "[..., top_inside(10), under(..., 10)]"
+            ) from e
+
 
         for widget in self.widgets:
             print(f"*** {widget!r} ***")

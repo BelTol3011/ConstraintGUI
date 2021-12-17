@@ -93,20 +93,8 @@ class Widget:
 
         self._constraints = []
         for constraint in constraints_:
-            if isinstance(constraint, tuple):
-                constraint, referenced_widgets = constraint
-            else:
-                referenced_widgets = {}
-
-            if self in referenced_widgets:
-                ConstraintResolutionException(f"Can't reference self, you can use attributes of self though: "
-                                              f"{constraint!r}")
-
-            # assume constraint is "relative" (for example WIDGET_X references *this* widget's x) to this widget
-            # assume all symbols with no specified relation are referencing this widget
+            # assume constraint is relative
             self._constraints.append(self.get_expr(constraint))
-
-            self.depends_on.update(referenced_widgets)
 
         if self.window_:
             self.window_.resolve_constraints_on_next_frame = True

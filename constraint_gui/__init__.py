@@ -56,6 +56,7 @@ class Widget:
             self.window_.register_widget(self)
 
         self.constraints = []
+        self.animated_vars: dict[Symbol, Callable[[], float]] = {}
         self._solutions = {}
         self.children: set[Widget] = set()
 
@@ -87,9 +88,8 @@ class Widget:
         return self._constraints
 
     @constraints.setter
-    def constraints(self, constraints_: Iterable[Eq | tuple[Eq, set["Widget"]]]):
+    def constraints(self, constraints_: Iterable[Eq]):
         """This is very expensive since it needs to solve a system of equations. Ideally, only invoke once."""
-        self.depends_on = set()
 
         self._constraints = []
         for constraint in constraints_:
@@ -99,6 +99,12 @@ class Widget:
         if self.window_:
             self.window_.resolve_constraints_on_next_frame = True
 
+    def animate(self, var: Symbol, func: Callable[[], int | float]):
+        # sym_animated = Symbol(f"{self.get_expr(var).name}_animated")
+
+        self.animated_vars.update({var: func})
+        # self._constraints.append(Eq(self.get_expr(var), sym_animated))
+
     @property
     def solutions(self):
         return self._solutions
@@ -107,7 +113,7 @@ class Widget:
     def solutions(self, solutions):
         self._solutions = solutions
 
-        args = self.window_.expr_params
+        args = self.window_.expr_params + tuple(self.animated_vars.keys())
 
         self._x = lambdify(args, solutions[self.x_expr])
         self._y = lambdify(args, solutions[self.y_expr])
@@ -115,12 +121,22 @@ class Widget:
         self._height = lambdify(args, solutions[self.height_expr])
 
     def update_self(self):
-        self.x = float(self._x(*self.window_.params))
-        self.y = float(self._y(*self.window_.params))
-        self.width = float(self._width(*self.window_.params))
-        self.height = float(self._height(*self.window_.params))
+        animated_args = [func() for func in self.animated_vars.values()]
 
-        self.needs_update = False
+        try:
+            self.x = float(self._x(*self.window_.params, *animated_args))
+            self.y = float(self._y(*self.window_.params, *animated_args))
+            self.width = float(self._width(*self.window_.params, *animated_args))
+            self.height = float(self._height(*self.window_.params, *animated_args))
+        except TypeError as e:
+            raise ConstraintResolutionException("Constraints to lax! One or more variables is still loose/undefined!") \
+                from e
+
+        if self.animated_vars:
+            # all widgets need to redraw
+            self.window_.register_redraw()
+
+            self.needs_update = True
 
     def get_expr(self, expr):
         """Converts a relative expression, e. g. Eq(WIDGET_WIDTH, WIDGET_HEIGHT) to an absolute expression, e. g.
@@ -214,16 +230,16 @@ class Widget:
         self.is_destroyed = True
 
     def get_debug_str(self):
-        return f"Wx={self.solutions[WIDGET_X]}={self.x:.0f}\n" \
-               f"Wy={self.solutions[WIDGET_Y]}={self.y:.0f}\n" \
-               f"Ww={self.solutions[WIDGET_WIDTH]}={self.width:.0f}\n" \
-               f"Wh={self.solutions[WIDGET_HEIGHT]}={self.height:.0f}\n" \
+        return f"Wx={self.solutions[self.x_expr]}={self.x:.0f}\n" \
+               f"Wy={self.solutions[self.y_expr]}={self.y:.0f}\n" \
+               f"Ww={self.solutions[self.width_expr]}={self.width:.0f}\n" \
+               f"Wh={self.solutions[self.height_expr]}={self.height:.0f}\n" \
                f"Mx={self.last_mouse_x}\n" \
                f"My={self.last_mouse_y}"
 
 
 class Window(Widget):
-    def __init__(self, bg=(255, 255, 255)):
+    def __init__(self, bg=color("dark grey")):
         self.window = pyglet.window.Window(800, 450, resizable=True)
 
         self.widgets: set[Widget] = set()
@@ -290,9 +306,6 @@ class Window(Widget):
 
             self.resolve_constraints_on_next_frame = False
 
-        if self.needs_redraw:
-            self.window.clear()
-
         batch = pyglet.graphics.Batch()
 
         for widget in self.widgets:
@@ -300,6 +313,13 @@ class Window(Widget):
                 widget.needs_update = False
                 widget.update_self()
 
+        if self.needs_redraw:
+            self.window.clear()
+
+            # if the position of widgets changed, the mouse pointer might not be inside them anymore
+            self._on_mouse_motion(self.last_mouse_x, self.last_mouse_y, 0, 0)
+
+        for widget in self.widgets:
             if widget.needs_redraw or self.needs_redraw:
                 widget.needs_redraw = False
                 widget.draw(batch)
@@ -335,7 +355,6 @@ class Window(Widget):
                 "[..., top_inside(10), under(..., 10)]"
             ) from e
 
-
         for widget in self.widgets:
             print(f"*** {widget!r} ***")
             try:
@@ -351,6 +370,9 @@ class Window(Widget):
         self.widgets.add(widget)
 
     def _on_mouse_motion(self, x, y, dx, dy):
+        self.last_mouse_x = x
+        self.last_mouse_y = y
+
         # this could be optimized... oh well
         for widget_ in self.widgets:
             if widget_.is_mouse_inside:
@@ -368,6 +390,11 @@ class Window(Widget):
         widget = self.get_affected_widget(x, y)
         widget.register_redraw()
         widget.on_mouse_press(x, y, button, modifiers)
+
+    def mainloop(self):
+        pyglet.clock.schedule_interval(lambda dt: ..., 1 / 60)
+
+        pyglet.app.run()
 
 
 class Label(Widget):
@@ -405,6 +432,14 @@ class Label(Widget):
         self.dpi = dpi
 
     @property
+    def fg(self):
+        return self._fg
+
+    @fg.setter
+    def fg(self, value):
+        self._fg = value + (255,) if len(value) == 3 else value
+
+    @property
     def background(self):
         return self.bg_on_hover if self.is_mouse_inside and self.bg_on_hover is not None else self.bg
 
@@ -415,7 +450,7 @@ class Label(Widget):
         self.text_label = pyglet.text.Label(text=self.text,
                                             x=self.x,
                                             y={"N": self.top_edge, "C": self.y_center, "S": self.y}[self.align[0]],
-                                            width=self.width,
+                                            width=1 if self.width == 0 else self.width,
                                             font_name=self.font_name,
                                             font_size=self.font_size,
                                             color=self.fg,

@@ -11,6 +11,13 @@ class MouseTest(Label):
         self.bg = (self.bg[0] + 1 % 256,) * 3
 
 
+class DebugLabel(Label):
+    def draw_self(self, batch: pyglet.graphics.Batch):
+        self.text = self.get_debug_str()
+
+        Label.draw_self(self, batch)
+
+
 def aligntest():
     win = Window(bg=color("gainsboro"))
 
